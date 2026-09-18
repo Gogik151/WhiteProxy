@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "proxymod",
+  "version": "${version}",
+  "name": "Proxy Mod",
+  "description": "Standalone Proxy Mod with original custom UI render for Fabric 1.21.11",
+  "authors": [
+    "white"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": []
+  },
+  "mixins": [
+    "proxymod.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}
