@@ -128,6 +128,87 @@ public class ProxyConfig {
         }
     }
 
+    public enum RuleAction {
+        PROFILE("Profile"),
+        DIRECT("Direct");
+
+        private final String displayName;
+
+        RuleAction(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+    }
+
+    public static class ServerRule {
+        private String pattern = "*.hypixel.net";
+        private RuleAction action = RuleAction.DIRECT;
+        private String targetProfile = "Default";
+        private boolean enabled = true;
+
+        public ServerRule() {}
+
+        public ServerRule(String pattern, RuleAction action, String targetProfile, boolean enabled) {
+            this.pattern = pattern;
+            this.action = action != null ? action : RuleAction.DIRECT;
+            this.targetProfile = targetProfile != null ? targetProfile : "Default";
+            this.enabled = enabled;
+        }
+
+        public String getPattern() {
+            return pattern != null ? pattern : "";
+        }
+
+        public void setPattern(String pattern) {
+            this.pattern = pattern;
+        }
+
+        public RuleAction getAction() {
+            return action != null ? action : RuleAction.DIRECT;
+        }
+
+        public void setAction(RuleAction action) {
+            this.action = action != null ? action : RuleAction.DIRECT;
+        }
+
+        public String getTargetProfile() {
+            return targetProfile != null ? targetProfile : "Default";
+        }
+
+        public void setTargetProfile(String targetProfile) {
+            this.targetProfile = targetProfile != null ? targetProfile : "Default";
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public boolean matches(String host) {
+            if (!enabled || host == null || pattern == null) return false;
+            String h = host.trim().toLowerCase();
+            String p = pattern.trim().toLowerCase();
+            if (p.isEmpty()) return false;
+            if (p.equals("*") || p.equals("*.*")) return true;
+
+            if (p.startsWith("*.")) {
+                String suffix = p.substring(2);
+                return h.equals(suffix) || h.endsWith("." + suffix);
+            }
+            if (p.endsWith(".*")) {
+                String prefix = p.substring(0, p.length() - 2);
+                return h.equals(prefix) || h.startsWith(prefix + ".");
+            }
+            return h.equalsIgnoreCase(p);
+        }
+    }
+
     private boolean enabled = false;
     private Type type = Type.SOCKS5;
     private String host = "127.0.0.1";
@@ -137,8 +218,29 @@ public class ProxyConfig {
     private String language = "ru";
     private boolean hudEnabled = true;
     private boolean autoFailover = false;
+    private boolean dnsLeakProtection = true;
     private int selectedProfileIndex = 0;
     private List<ProxyProfile> profiles = new ArrayList<>();
+    private List<ServerRule> serverRules = new ArrayList<>();
+
+    public boolean isDnsLeakProtection() {
+        return dnsLeakProtection;
+    }
+
+    public void setDnsLeakProtection(boolean dnsLeakProtection) {
+        this.dnsLeakProtection = dnsLeakProtection;
+    }
+
+    public List<ServerRule> getServerRules() {
+        if (serverRules == null) {
+            serverRules = new ArrayList<>();
+        }
+        return serverRules;
+    }
+
+    public void setServerRules(List<ServerRule> serverRules) {
+        this.serverRules = serverRules != null ? serverRules : new ArrayList<>();
+    }
 
     public String getLanguage() {
         return language != null ? language : "ru";
@@ -284,6 +386,7 @@ public class ProxyConfig {
                 ProxyConfig cfg = GSON.fromJson(reader, ProxyConfig.class);
                 if (cfg != null) {
                     cfg.getProfiles(); // ensure default profile initialized
+                    cfg.getServerRules(); // ensure server rules initialized
                     return cfg;
                 }
             } catch (Exception e) {
@@ -292,6 +395,7 @@ public class ProxyConfig {
         }
         ProxyConfig cfg = new ProxyConfig();
         cfg.getProfiles();
+        cfg.getServerRules();
         return cfg;
     }
 

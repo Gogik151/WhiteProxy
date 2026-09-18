@@ -99,4 +99,44 @@ public final class I18n {
     public static String delProfile(String lang) {
         return isRu(lang) ? "Удалить" : "Delete";
     }
+
+    public static String tabGeneral(String lang) {
+        return isRu(lang) ? "Общие" : "General";
+    }
+
+    public static String tabRules(String lang) {
+        return isRu(lang) ? "Правила" : "Rules";
+    }
+
+    public static String dnsOption(String lang) {
+        return isRu(lang) ? "Защита DNS" : "DNS Leak Protect";
+    }
+
+    public static String addRule(String lang) {
+        return isRu(lang) ? "+ Правило" : "+ Rule";
+    }
+
+    public static String delRule(String lang) {
+        return isRu(lang) ? "Удалить" : "Delete";
+    }
+
+    public static String rulePatternLabel(String lang) {
+        return isRu(lang) ? "ШАБЛОН СЕРВЕРА (НАПР. *.HYPIXEL.NET)" : "SERVER PATTERN (E.G. *.HYPIXEL.NET)";
+    }
+
+    public static String ruleActionLabel(String lang) {
+        return isRu(lang) ? "ДЕЙСТВИЕ" : "ACTION";
+    }
+
+    public static String ruleDirect(String lang) {
+        return isRu(lang) ? "Напрямую" : "Direct";
+    }
+
+    public static String ruleProfile(String lang) {
+        return isRu(lang) ? "Прокси" : "Proxy";
+    }
+
+    public static String noRules(String lang) {
+        return isRu(lang) ? "Правил нет. Нажмите «+ Правило»" : "No rules. Click «+ Rule»";
+    }
 }

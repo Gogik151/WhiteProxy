@@ -28,21 +28,88 @@ public class ProxyManager {
         return testing;
     }
 
+    public record RoutingDecision(boolean isDirect, ProxyConfig.ProxyProfile profile) {
+        public static RoutingDecision direct() {
+            return new RoutingDecision(true, null);
+        }
+        public static RoutingDecision proxy(ProxyConfig.ProxyProfile profile) {
+            return new RoutingDecision(false, profile);
+        }
+    }
+
+    public static boolean shouldInterceptConnections() {
+        if (config.isEnabled() && isProxyActive()) return true;
+        for (ProxyConfig.ServerRule r : config.getServerRules()) {
+            if (r.isEnabled() && r.getAction() == ProxyConfig.RuleAction.PROFILE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static RoutingDecision resolveRouting(String host, int port) {
+        if (host == null || host.trim().isEmpty()) {
+            return fallbackRouting();
+        }
+
+        for (ProxyConfig.ServerRule rule : config.getServerRules()) {
+            if (rule.matches(host)) {
+                if (rule.getAction() == ProxyConfig.RuleAction.DIRECT) {
+                    return RoutingDecision.direct();
+                } else {
+                    String targetProfName = rule.getTargetProfile();
+                    for (ProxyConfig.ProxyProfile p : config.getProfiles()) {
+                        if (p.getName().equalsIgnoreCase(targetProfName)) {
+                            return RoutingDecision.proxy(p);
+                        }
+                    }
+                    return RoutingDecision.proxy(config.getActiveProfile());
+                }
+            }
+        }
+
+        return fallbackRouting();
+    }
+
+    private static RoutingDecision fallbackRouting() {
+        if (config.isEnabled() && isProfileValid(config.getActiveProfile())) {
+            return RoutingDecision.proxy(config.getActiveProfile());
+        }
+        return RoutingDecision.direct();
+    }
+
+    public static boolean isProfileValid(ProxyConfig.ProxyProfile profile) {
+        return profile != null
+                && profile.getHost() != null
+                && !profile.getHost().trim().isEmpty()
+                && profile.getPort() > 0
+                && profile.getPort() <= 65535;
+    }
+
+    public static boolean isDnsLeakProtected(String host, int port) {
+        if (!config.isDnsLeakProtection()) return false;
+        RoutingDecision decision = resolveRouting(host, port);
+        return !decision.isDirect();
+    }
+
     public static boolean isProxyActive() {
-        return config.isEnabled()
-                && config.getHost() != null
-                && !config.getHost().trim().isEmpty()
-                && config.getPort() > 0
-                && config.getPort() <= 65535;
+        return config.isEnabled() && isProfileValid(config.getActiveProfile());
+    }
+
+    public static InetSocketAddress getProxySocketAddress(ProxyConfig.ProxyProfile profile) {
+        if (profile == null) {
+            profile = config.getActiveProfile();
+        }
+        try {
+            InetAddress addr = InetAddress.getByName(profile.getHost().trim());
+            return new InetSocketAddress(addr, profile.getPort());
+        } catch (Exception e) {
+            return new InetSocketAddress(profile.getHost().trim(), profile.getPort());
+        }
     }
 
     public static InetSocketAddress getProxySocketAddress() {
-        try {
-            InetAddress addr = InetAddress.getByName(config.getHost().trim());
-            return new InetSocketAddress(addr, config.getPort());
-        } catch (Exception e) {
-            return new InetSocketAddress(config.getHost().trim(), config.getPort());
-        }
+        return getProxySocketAddress(config.getActiveProfile());
     }
 
     public record TestResult(boolean success, long pingMs, String error) {}

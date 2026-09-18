@@ -17,12 +17,12 @@ public class ClientConnectionMixin {
 
     @Inject(method = "addHandlers", at = @At("HEAD"))
     private static void onAddHandlers(ChannelPipeline pipeline, NetworkSide side, boolean bl, PacketSizeLogger packetSizeLogger, CallbackInfo ci) {
-        if (side == NetworkSide.CLIENTBOUND && ProxyManager.isProxyActive()) {
+        if (side == NetworkSide.CLIENTBOUND && ProxyManager.shouldInterceptConnections()) {
             // Never proxy local integrated server / singleplayer in-memory channels
             if (pipeline.channel() == null || pipeline.channel() instanceof LocalChannel) {
                 return;
             }
-            pipeline.addFirst("proxy_handler", new SocksProxyHandler(ProxyManager.getConfig()));
+            pipeline.addFirst("proxy_handler", new SocksProxyHandler());
         }
     }
 }

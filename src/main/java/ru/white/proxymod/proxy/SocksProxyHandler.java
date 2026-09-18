@@ -27,11 +27,17 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
 
     private InetSocketAddress target;
     private final ProxyConfig config;
+    private ProxyConfig.ProxyProfile activeProfile;
     private State state = State.INIT;
     private ByteBuf cumulation;
 
+    public SocksProxyHandler() {
+        this(ProxyManager.getConfig());
+    }
+
     public SocksProxyHandler(ProxyConfig config) {
         this.config = config;
+        this.activeProfile = config != null ? config.getActiveProfile() : null;
     }
 
     @Override
@@ -44,14 +50,28 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
             return;
         }
 
+        ProxyManager.RoutingDecision decision = ProxyManager.resolveRouting(isa.getHostString(), isa.getPort());
+        if (decision.isDirect() || decision.profile() == null) {
+            try {
+                ctx.pipeline().remove(this);
+            } catch (Exception ignored) {}
+            ctx.connect(remoteAddress, localAddress, promise);
+            return;
+        }
+
         this.target = isa;
-        SocketAddress proxyAddress = ProxyManager.getProxySocketAddress();
+        this.activeProfile = decision.profile();
+        SocketAddress proxyAddress = ProxyManager.getProxySocketAddress(this.activeProfile);
         ctx.connect(proxyAddress, localAddress, promise);
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        switch (config.getType()) {
+        if (activeProfile == null) {
+            finishHandshake(ctx);
+            return;
+        }
+        switch (activeProfile.getType()) {
             case SOCKS5 -> sendSocks5Greeting(ctx);
             case SOCKS4 -> sendSocks4Connect(ctx);
             case HTTP -> sendHttpConnect(ctx);
@@ -61,7 +81,7 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
     private void sendSocks5Greeting(ChannelHandlerContext ctx) {
         ByteBuf buf = ctx.alloc().buffer();
         buf.writeByte(0x05); // SOCKS5
-        if (config.hasAuth()) {
+        if (activeProfile != null && activeProfile.hasAuth()) {
             buf.writeByte(2); // 2 метода: без аутентификации (0x00) и логин/пароль (0x02)
             buf.writeByte(0x00);
             buf.writeByte(0x02);
@@ -76,16 +96,31 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
     private void sendSocks5Auth(ChannelHandlerContext ctx) {
         ByteBuf buf = ctx.alloc().buffer();
         buf.writeByte(0x01); // Версия суб-переговоров логин/пароль
-        byte[] uBytes = (config.getUsername() != null ? config.getUsername() : "").getBytes(StandardCharsets.UTF_8);
+        byte[] uBytes = (activeProfile != null && activeProfile.getUsername() != null ? activeProfile.getUsername() : "").getBytes(StandardCharsets.UTF_8);
         buf.writeByte(uBytes.length);
         buf.writeBytes(uBytes);
 
-        byte[] pBytes = (config.getPassword() != null ? config.getPassword() : "").getBytes(StandardCharsets.UTF_8);
+        byte[] pBytes = (activeProfile != null && activeProfile.getPassword() != null ? activeProfile.getPassword() : "").getBytes(StandardCharsets.UTF_8);
         buf.writeByte(pBytes.length);
         buf.writeBytes(pBytes);
 
         state = State.SOCKS5_AUTH_STATUS;
         ctx.writeAndFlush(buf);
+    }
+
+    private static boolean isIpLiteral(String host) {
+        if (host == null) return false;
+        String[] parts = host.split("\\.");
+        if (parts.length != 4) return false;
+        for (String p : parts) {
+            try {
+                int n = Integer.parseInt(p);
+                if (n < 0 || n > 255) return false;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void sendSocks5ConnectRequest(ChannelHandlerContext ctx) {
@@ -97,22 +132,26 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
         String host = target.getHostString();
         int port = target.getPort();
 
-        boolean isIp = false;
+        boolean isIp = isIpLiteral(host);
         byte[] ipBytes = null;
-        try {
-            InetAddress addr = target.getAddress();
-            if (addr != null) {
-                ipBytes = addr.getAddress();
-                if (ipBytes.length == 4) isIp = true;
-            }
-        } catch (Exception ignored) {}
+        if (isIp) {
+            try {
+                InetAddress addr = InetAddress.getByName(host);
+                if (addr != null) {
+                    byte[] raw = addr.getAddress();
+                    if (raw.length == 4) {
+                        ipBytes = raw;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
 
-        if (isIp && ipBytes != null) {
+        if (isIp && ipBytes != null && !config.isDnsLeakProtection()) {
             buf.writeByte(0x01); // IPv4
             buf.writeBytes(ipBytes);
         } else {
             byte[] hostBytes = host.getBytes(StandardCharsets.ISO_8859_1);
-            buf.writeByte(0x03); // Доменное имя
+            buf.writeByte(0x03); // Доменное имя (Удаленный DNS на стороне прокси!)
             buf.writeByte(hostBytes.length);
             buf.writeBytes(hostBytes);
         }
@@ -128,27 +167,31 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
         buf.writeByte(0x01); // CONNECT
         buf.writeShort(target.getPort());
 
-        byte[] ipBytes = null;
-        try {
-            InetAddress addr = target.getAddress();
-            if (addr != null) {
-                ipBytes = addr.getAddress();
-            }
-        } catch (Exception ignored) {}
+        String host = target.getHostString();
+        boolean isIp = isIpLiteral(host);
 
-        if (ipBytes == null || ipBytes.length != 4) {
+        if (isIp && !config.isDnsLeakProtection()) {
             try {
-                ipBytes = InetAddress.getByName(target.getHostString()).getAddress();
+                byte[] ipBytes = InetAddress.getByName(host).getAddress();
+                buf.writeBytes(ipBytes);
+                buf.writeByte(0x00); // Empty userid
             } catch (Exception ignored) {
-                ipBytes = new byte[]{0, 0, 0, 1}; // SOCKS4a fallback IP
+                sendSocks4a(buf, host);
             }
+        } else {
+            // SOCKS4a (Remote DNS resolution)
+            sendSocks4a(buf, host);
         }
-
-        buf.writeBytes(ipBytes);
-        buf.writeByte(0x00); // Пустой UserID с null-терминатором
 
         state = State.SOCKS4_CONNECT_RESPONSE;
         ctx.writeAndFlush(buf);
+    }
+
+    private void sendSocks4a(ByteBuf buf, String host) {
+        buf.writeBytes(new byte[]{0, 0, 0, 1}); // SOCKS4a dummy IP (0.0.0.x)
+        buf.writeByte(0x00); // Empty userid + null terminator
+        buf.writeBytes(host.getBytes(StandardCharsets.ISO_8859_1));
+        buf.writeByte(0x00); // Null terminator
     }
 
     private void sendHttpConnect(ChannelHandlerContext ctx) {
@@ -157,8 +200,8 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
         StringBuilder sb = new StringBuilder();
         sb.append("CONNECT ").append(host).append(":").append(port).append(" HTTP/1.1\r\n");
         sb.append("Host: ").append(host).append(":").append(port).append("\r\n");
-        if (config.hasAuth()) {
-            String creds = config.getUsername() + ":" + (config.getPassword() != null ? config.getPassword() : "");
+        if (activeProfile != null && activeProfile.hasAuth()) {
+            String creds = activeProfile.getUsername() + ":" + (activeProfile.getPassword() != null ? activeProfile.getPassword() : "");
             String b64 = Base64.getEncoder().encodeToString(creds.getBytes(StandardCharsets.UTF_8));
             sb.append("Proxy-Authorization: Basic ").append(b64).append("\r\n");
         }

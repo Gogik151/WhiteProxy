@@ -6,6 +6,7 @@
     "TitleScreenMixin",
     "MultiplayerScreenMixin",
     "ClientConnectionMixin",
+    "AllowedAddressResolverMixin",
     "ShaderLoaderMixin"
   ],
   "injectors": {
