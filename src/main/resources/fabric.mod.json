@@ -2,16 +2,24 @@
   "schemaVersion": 1,
   "id": "proxymod",
   "version": "${version}",
-  "name": "Proxy Mod",
-  "description": "Standalone Proxy Mod with original custom UI render for Fabric 1.21.11",
+  "name": "WhiteProxy",
+  "description": "High-performance SOCKS4/SOCKS5 in-game proxy manager with custom shaders, Apple SF Pro fonts, profiles, and live HUD for Fabric 1.21.11",
   "authors": [
-    "white"
+    "white",
+    "Gogik151"
   ],
-  "contact": {},
+  "contact": {
+    "homepage": "https://modrinth.com/mod/whiteproxy",
+    "sources": "https://github.com/Gogik151/WhiteProxy",
+    "issues": "https://github.com/Gogik151/WhiteProxy/issues"
+  },
   "license": "MIT",
+  "icon": "assets/proxymod/icon.png",
   "environment": "client",
   "entrypoints": {
-    "client": []
+    "client": [
+      "ru.white.proxymod.WhiteProxyClient"
+    ]
   },
   "mixins": [
     "proxymod.mixins.json"

@@ -61,7 +61,7 @@ public final class I18n {
     }
 
     public static String testing(String lang) {
-        return isRu(lang) ? "⏳ Проверка подключения..." : "⏳ Testing connection...";
+        return isRu(lang) ? "⏳ Проверка..." : "⏳ Testing...";
     }
 
     public static String success(String lang, long ping) {
@@ -74,5 +74,29 @@ public final class I18n {
 
     public static String invalidPort(String lang) {
         return isRu(lang) ? "Неверный порт" : "Invalid port";
+    }
+
+    public static String hudOption(String lang) {
+        return isRu(lang) ? "HUD в игре" : "In-Game HUD";
+    }
+
+    public static String failoverOption(String lang) {
+        return isRu(lang) ? "Авто-переключение" : "Auto Failover";
+    }
+
+    public static String importClipboard(String lang) {
+        return isRu(lang) ? "Импорт" : "Import";
+    }
+
+    public static String profileLabel(String lang) {
+        return isRu(lang) ? "ПРОФИЛЬ" : "PROFILE";
+    }
+
+    public static String addProfile(String lang) {
+        return isRu(lang) ? "+ Профиль" : "+ Profile";
+    }
+
+    public static String delProfile(String lang) {
+        return isRu(lang) ? "Удалить" : "Delete";
     }
 }

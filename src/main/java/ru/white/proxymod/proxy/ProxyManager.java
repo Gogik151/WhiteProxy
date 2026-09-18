@@ -13,9 +13,19 @@ import java.util.function.Consumer;
 public class ProxyManager {
 
     private static final ProxyConfig config = ProxyConfig.load();
+    private static long currentPing = -1;
+    private static boolean testing = false;
 
     public static ProxyConfig getConfig() {
         return config;
+    }
+
+    public static long getCurrentPing() {
+        return currentPing;
+    }
+
+    public static boolean isTesting() {
+        return testing;
     }
 
     public static boolean isProxyActive() {
@@ -37,19 +47,19 @@ public class ProxyManager {
 
     public record TestResult(boolean success, long pingMs, String error) {}
 
-    public static void testConnection(ProxyConfig testConfig, Consumer<TestResult> callback) {
+    public static void testProfile(ProxyConfig.ProxyProfile profile, Consumer<TestResult> callback) {
         CompletableFuture.runAsync(() -> {
             long startTime = System.currentTimeMillis();
             try (Socket socket = new Socket()) {
-                socket.setSoTimeout(4000);
-                socket.connect(new InetSocketAddress(testConfig.getHost().trim(), testConfig.getPort()), 3500);
+                socket.setSoTimeout(3500);
+                socket.connect(new InetSocketAddress(profile.getHost().trim(), profile.getPort()), 3000);
 
                 OutputStream out = socket.getOutputStream();
                 InputStream in = socket.getInputStream();
 
-                switch (testConfig.getType()) {
+                switch (profile.getType()) {
                     case SOCKS5 -> {
-                        if (testConfig.hasAuth()) {
+                        if (profile.hasAuth()) {
                             out.write(new byte[]{0x05, 0x02, 0x00, 0x02});
                         } else {
                             out.write(new byte[]{0x05, 0x01, 0x00});
@@ -60,14 +70,17 @@ public class ProxyManager {
                         try {
                             new java.io.DataInputStream(in).readFully(resp);
                         } catch (Exception e) {
+                            profile.setLastPingMs(-1);
                             callback.accept(new TestResult(false, 0, "No SOCKS5 response"));
                             return;
                         }
                         if (resp[0] != 0x05) {
+                            profile.setLastPingMs(-1);
                             callback.accept(new TestResult(false, 0, "Invalid SOCKS5 version (" + resp[0] + ")"));
                             return;
                         }
                         if (resp[1] == (byte) 0xFF) {
+                            profile.setLastPingMs(-1);
                             callback.accept(new TestResult(false, 0, "Unsupported authentication"));
                             return;
                         }
@@ -80,18 +93,20 @@ public class ProxyManager {
                         try {
                             new java.io.DataInputStream(in).readFully(resp);
                         } catch (Exception e) {
+                            profile.setLastPingMs(-1);
                             callback.accept(new TestResult(false, 0, "No SOCKS4 response"));
                             return;
                         }
                         if (resp[0] != 0x00) {
+                            profile.setLastPingMs(-1);
                             callback.accept(new TestResult(false, 0, "Invalid SOCKS4 response"));
                             return;
                         }
                     }
                     case HTTP -> {
                         String req = "CONNECT 1.1.1.1:80 HTTP/1.1\r\nHost: 1.1.1.1:80\r\n";
-                        if (testConfig.hasAuth()) {
-                            String creds = testConfig.getUsername() + ":" + (testConfig.getPassword() != null ? testConfig.getPassword() : "");
+                        if (profile.hasAuth()) {
+                            String creds = profile.getUsername() + ":" + (profile.getPassword() != null ? profile.getPassword() : "");
                             req += "Proxy-Authorization: Basic " + Base64.getEncoder().encodeToString(creds.getBytes(StandardCharsets.UTF_8)) + "\r\n";
                         }
                         req += "\r\n";
@@ -102,6 +117,7 @@ public class ProxyManager {
                         int read = in.read(resp);
                         String str = new String(resp, 0, Math.max(0, read), StandardCharsets.US_ASCII);
                         if (!str.contains("HTTP/")) {
+                            profile.setLastPingMs(-1);
                             callback.accept(new TestResult(false, 0, "Not an HTTP proxy"));
                             return;
                         }
@@ -109,12 +125,36 @@ public class ProxyManager {
                 }
 
                 long ping = System.currentTimeMillis() - startTime;
+                profile.setLastPingMs(ping);
                 callback.accept(new TestResult(true, ping, null));
             } catch (Exception e) {
+                profile.setLastPingMs(-1);
                 String msg = e.getMessage();
                 if (msg == null || msg.isEmpty()) msg = e.getClass().getSimpleName();
                 callback.accept(new TestResult(false, 0, msg));
             }
         });
+    }
+
+    public static void testConnection(ProxyConfig testConfig, Consumer<TestResult> callback) {
+        testing = true;
+        testProfile(testConfig.getActiveProfile(), result -> {
+            testing = false;
+            if (result.success()) {
+                currentPing = result.pingMs();
+            } else {
+                currentPing = -1;
+            }
+            callback.accept(result);
+        });
+    }
+
+    public static void tryFailover() {
+        if (!config.isAutoFailover() || config.getProfiles().size() <= 1) return;
+
+        int currentIdx = config.getSelectedProfileIndex();
+        int nextIdx = (currentIdx + 1) % config.getProfiles().size();
+        config.setSelectedProfileIndex(nextIdx);
+        config.save();
     }
 }

@@ -18,12 +18,16 @@ import ru.white.proxymod.render.font.Fonts;
 import ru.white.proxymod.render.math.MathUtil;
 import ru.white.proxymod.render.sound.GuiSounds;
 
+import java.util.List;
+
 public class ProxyScreen extends Screen {
 
     private final Screen parent;
     private final ProxyConfig config;
 
     private boolean enabled;
+    private boolean hudEnabled;
+    private boolean autoFailover;
     private ProxyConfig.Type selectedType;
     private String currentLang;
 
@@ -39,20 +43,23 @@ public class ProxyScreen extends Screen {
     private boolean isTesting = false;
 
     private final float winW = 340.0F;
-    private final float winH = 192.0F;
+    private final float winH = 204.0F;
 
     public ProxyScreen(Screen parent) {
         super(Text.literal("Proxy Settings"));
         this.parent = parent;
         this.config = ProxyManager.getConfig();
         this.enabled = config.isEnabled();
+        this.hudEnabled = config.isHudEnabled();
+        this.autoFailover = config.isAutoFailover();
         this.selectedType = config.getType();
         this.currentLang = config.getLanguage();
 
-        this.hostText = config.getHost() != null ? config.getHost() : "127.0.0.1";
-        this.portText = String.valueOf(config.getPort() > 0 ? config.getPort() : 1080);
-        this.userText = config.getUsername() != null ? config.getUsername() : "";
-        this.passText = config.getPassword() != null ? config.getPassword() : "";
+        ProxyConfig.ProxyProfile profile = config.getActiveProfile();
+        this.hostText = profile.getHost() != null ? profile.getHost() : "127.0.0.1";
+        this.portText = String.valueOf(profile.getPort() > 0 ? profile.getPort() : 1080);
+        this.userText = profile.getUsername() != null ? profile.getUsername() : "";
+        this.passText = profile.getPassword() != null ? profile.getPassword() : "";
     }
 
     @Override
@@ -124,7 +131,7 @@ public class ProxyScreen extends Screen {
         Fonts.sf_bold.draw(title, winX + 14.0F, winY + 9.0F, 8.5F, ColorUtil.getColor(245));
         Fonts.sf_medium.draw(subtitle, winX + 14.0F + Fonts.sf_bold.getWidth(title, 8.5F) + 6.0F, winY + 10.5F, 6.2F, accent);
 
-        // Кнопка закрытия X (четкая и видимая)
+        // Кнопка закрытия X
         float closeSize = 16.0F;
         float closeX = winX + winW - 14.0F - closeSize;
         float closeY = winY + 6.0F;
@@ -169,32 +176,116 @@ public class ProxyScreen extends Screen {
         }
 
         // Разделитель шапки
-        Draw.rect(winX, winY + 26.0F, winW, 1.0F, ColorUtil.getColor(28, 38, 56));
+        Draw.rect(winX, winY + 25.0F, winW, 1.0F, ColorUtil.getColor(28, 38, 56));
 
-        // 7. Переключатель активности прокси
-        float switchW = 25.0F;
-        float switchH = 13.0F;
-        float switchX = winX + winW - 14.0F - switchW;
-        float switchY = winY + 31.0F;
+        // 7. Панель профилей: [ < Profile 1/3 > ] [ + ] [ Del ] [ Import ]
+        List<ProxyConfig.ProxyProfile> profiles = config.getProfiles();
+        int activeIdx = config.getSelectedProfileIndex();
+        float profY = winY + 30.0F;
 
-        Fonts.sf_medium.draw(I18n.useProxy(currentLang), winX + 14.0F, winY + 33.5F, 7.2F, ColorUtil.getColor(235, 240, 250));
+        // Кнопка Предыдущий <
+        float prevX = winX + 14.0F;
+        float arrowBtnW = 15.0F;
+        float arrowBtnH = 14.0F;
+        boolean prevHov = MathUtil.isHovered(mx, my, prevX, profY, arrowBtnW, arrowBtnH);
+        Draw.rect(prevX, profY, arrowBtnW, arrowBtnH, prevHov ? ColorUtil.getColor(26, 36, 52) : ColorUtil.getColor(18, 24, 36), 2.5F);
+        Draw.outline(prevX, profY, arrowBtnW, arrowBtnH, 1.0F, ColorUtil.getColor(36, 48, 70), 2.5F);
+        Fonts.sf_bold.drawCentered("<", prevX + arrowBtnW / 2.0F, profY + 2.5F, 6.8F, prevHov ? ColorUtil.getColor(255) : ColorUtil.getColor(160, 175, 200));
+
+        // Плашка текущего профиля
+        float pLabelX = prevX + arrowBtnW + 3.0F;
+        float pLabelW = 86.0F;
+        Draw.rect(pLabelX, profY, pLabelW, arrowBtnH, ColorUtil.getColor(14, 18, 28), 2.5F);
+        Draw.outline(pLabelX, profY, pLabelW, arrowBtnH, 1.0F, ColorUtil.getColor(34, 46, 68), 2.5F);
+        String profDisplay = "#" + (activeIdx + 1) + " " + (activeIdx < profiles.size() ? profiles.get(activeIdx).getName() : "");
+        if (Fonts.sf_medium.getWidth(profDisplay, 6.2F) > pLabelW - 6.0F) {
+            profDisplay = "#" + (activeIdx + 1) + " " + (activeIdx < profiles.size() ? profiles.get(activeIdx).getHost() : "");
+        }
+        Fonts.sf_medium.drawCentered(profDisplay, pLabelX + pLabelW / 2.0F, profY + 3.0F, 6.2F, ColorUtil.getColor(220, 230, 245));
+
+        // Кнопка Следующий >
+        float nextX = pLabelX + pLabelW + 3.0F;
+        boolean nextHov = MathUtil.isHovered(mx, my, nextX, profY, arrowBtnW, arrowBtnH);
+        Draw.rect(nextX, profY, arrowBtnW, arrowBtnH, nextHov ? ColorUtil.getColor(26, 36, 52) : ColorUtil.getColor(18, 24, 36), 2.5F);
+        Draw.outline(nextX, profY, arrowBtnW, arrowBtnH, 1.0F, ColorUtil.getColor(36, 48, 70), 2.5F);
+        Fonts.sf_bold.drawCentered(">", nextX + arrowBtnW / 2.0F, profY + 2.5F, 6.8F, nextHov ? ColorUtil.getColor(255) : ColorUtil.getColor(160, 175, 200));
+
+        // Кнопка Добавить [ + ]
+        float addX = nextX + arrowBtnW + 6.0F;
+        float addW = 38.0F;
+        boolean addHov = MathUtil.isHovered(mx, my, addX, profY, addW, arrowBtnH);
+        Draw.rect(addX, profY, addW, arrowBtnH, addHov ? ColorUtil.replAlpha(accent, 0.35F) : ColorUtil.getColor(18, 26, 40), 2.5F);
+        Draw.outline(addX, profY, addW, arrowBtnH, 1.0F, addHov ? accent : ColorUtil.getColor(38, 52, 76), 2.5F);
+        Fonts.sf_medium.drawCentered(I18n.addProfile(currentLang), addX + addW / 2.0F, profY + 3.0F, 5.8F, addHov ? ColorUtil.getColor(255) : ColorUtil.getColor(190, 205, 230));
+
+        // Кнопка Удалить [ Del ]
+        float delX = addX + addW + 4.0F;
+        float delW = 36.0F;
+        boolean canDel = profiles.size() > 1;
+        boolean delHov = canDel && MathUtil.isHovered(mx, my, delX, profY, delW, arrowBtnH);
+        int delBg = delHov ? ColorUtil.getColor(240, 50, 50, 0.22F) : ColorUtil.getColor(18, 22, 32);
+        int delBorder = delHov ? ColorUtil.getColor(245, 70, 70) : ColorUtil.getColor(32, 40, 58);
+        Draw.rect(delX, profY, delW, arrowBtnH, delBg, 2.5F);
+        Draw.outline(delX, profY, delW, arrowBtnH, 1.0F, delBorder, 2.5F);
+        Fonts.sf_medium.drawCentered(I18n.delProfile(currentLang), delX + delW / 2.0F, profY + 3.0F, 5.8F,
+                canDel ? (delHov ? ColorUtil.getColor(255, 120, 120) : ColorUtil.getColor(160, 170, 190)) : ColorUtil.getColor(70, 80, 100));
+
+        // Кнопка Импорт [ Import ]
+        float impX = delX + delW + 4.0F;
+        float impW = winX + winW - 14.0F - impX;
+        boolean impHov = MathUtil.isHovered(mx, my, impX, profY, impW, arrowBtnH);
+        Draw.rect(impX, profY, impW, arrowBtnH, impHov ? ColorUtil.getColor(28, 42, 64) : ColorUtil.getColor(18, 24, 36), 2.5F);
+        Draw.outline(impX, profY, impW, arrowBtnH, 1.0F, impHov ? ColorUtil.getColor(64, 90, 135) : ColorUtil.getColor(36, 48, 70), 2.5F);
+        Fonts.sf_medium.drawCentered(I18n.importClipboard(currentLang), impX + impW / 2.0F, profY + 3.0F, 5.8F,
+                impHov ? ColorUtil.getColor(245) : ColorUtil.getColor(180, 195, 220));
+
+        // 8. Переключатели: [Включить] + [HUD] + [Failover]
+        float optsY = winY + 49.0F;
+        float switchW = 20.0F;
+        float switchH = 11.0F;
+        float switchX = winX + 14.0F;
 
         int trackCol = enabled ? accent : ColorUtil.getColor(22, 30, 44);
-        Draw.rect(switchX, switchY, switchW, switchH, trackCol, switchH / 2.0F);
-        Draw.outline(switchX, switchY, switchW, switchH, 1.0F, enabled ? accent : ColorUtil.getColor(44, 58, 82), switchH / 2.0F);
+        Draw.rect(switchX, optsY + 1.0F, switchW, switchH, trackCol, switchH / 2.0F);
+        Draw.outline(switchX, optsY + 1.0F, switchW, switchH, 1.0F, enabled ? accent : ColorUtil.getColor(44, 58, 82), switchH / 2.0F);
+        float thumbSize = switchH - 2.5F;
+        float thumbX = switchX + 1.25F + (enabled ? (switchW - thumbSize - 2.5F) : 0.0F);
+        Draw.rect(thumbX, optsY + 2.25F, thumbSize, thumbSize, ColorUtil.getColor(255), thumbSize / 2.0F);
 
-        float thumbSize = switchH - 3.0F;
-        float thumbX = switchX + 1.5F + (enabled ? (switchW - thumbSize - 3.0F) : 0.0F);
-        Draw.rect(thumbX, switchY + 1.5F, thumbSize, thumbSize, ColorUtil.getColor(255), thumbSize / 2.0F);
+        Fonts.sf_medium.draw(I18n.useProxy(currentLang), switchX + switchW + 6.0F, optsY + 2.5F, 6.5F,
+                enabled ? ColorUtil.getColor(255) : ColorUtil.getColor(170, 180, 200));
 
-        // 8. Выбор протокола
-        Fonts.sf_regular.draw(I18n.protocol(currentLang), winX + 14.0F, winY + 49.0F, 5.8F, ColorUtil.getColor(130, 140, 160));
+        // HUD Toggle Badge
+        float hudBadgeX = winX + 160.0F;
+        float hudBadgeW = 74.0F;
+        float badgeH = 13.0F;
+        boolean hudHov = MathUtil.isHovered(mx, my, hudBadgeX, optsY, hudBadgeW, badgeH);
+        int hudBg = hudEnabled ? ColorUtil.replAlpha(accent, 0.25F) : (hudHov ? ColorUtil.getColor(20, 26, 38) : ColorUtil.getColor(14, 18, 28));
+        int hudBorder = hudEnabled ? accent : (hudHov ? ColorUtil.getColor(50, 68, 98) : ColorUtil.getColor(30, 40, 60));
+        Draw.rect(hudBadgeX, optsY, hudBadgeW, badgeH, hudBg, 2.5F);
+        Draw.outline(hudBadgeX, optsY, hudBadgeW, badgeH, 1.0F, hudBorder, 2.5F);
+        String hudText = (hudEnabled ? "● " : "○ ") + I18n.hudOption(currentLang);
+        Fonts.sf_medium.drawCentered(hudText, hudBadgeX + hudBadgeW / 2.0F, optsY + 2.5F, 5.8F,
+                hudEnabled ? ColorUtil.getColor(245) : ColorUtil.getColor(140, 150, 170));
 
+        // Failover Toggle Badge
+        float failBadgeX = hudBadgeX + hudBadgeW + 5.0F;
+        float failBadgeW = winX + winW - 14.0F - failBadgeX;
+        boolean failHov = MathUtil.isHovered(mx, my, failBadgeX, optsY, failBadgeW, badgeH);
+        int failBg = autoFailover ? ColorUtil.getColor(50, 205, 120, 0.22F) : (failHov ? ColorUtil.getColor(20, 26, 38) : ColorUtil.getColor(14, 18, 28));
+        int failBorder = autoFailover ? ColorUtil.getColor(50, 205, 120, 0.8F) : (failHov ? ColorUtil.getColor(50, 68, 98) : ColorUtil.getColor(30, 40, 60));
+        Draw.rect(failBadgeX, optsY, failBadgeW, badgeH, failBg, 2.5F);
+        Draw.outline(failBadgeX, optsY, failBadgeW, badgeH, 1.0F, failBorder, 2.5F);
+        String failText = (autoFailover ? "● " : "○ ") + I18n.failoverOption(currentLang);
+        Fonts.sf_medium.drawCentered(failText, failBadgeX + failBadgeW / 2.0F, optsY + 2.5F, 5.8F,
+                autoFailover ? ColorUtil.getColor(120, 255, 170) : ColorUtil.getColor(140, 150, 170));
+
+        // 9. Выбор протокола (SOCKS5 / SOCKS4 / HTTP)
         ProxyConfig.Type[] types = ProxyConfig.Type.values();
         float tabGap = 6.0F;
         float tabW = (winW - 28.0F - (types.length - 1) * tabGap) / types.length;
-        float tabH = 16.0F;
-        float tabY = winY + 57.0F;
+        float tabH = 15.0F;
+        float tabY = winY + 68.0F;
 
         for (int i = 0; i < types.length; i++) {
             ProxyConfig.Type t = types[i];
@@ -202,18 +293,18 @@ public class ProxyScreen extends Screen {
             boolean isSel = (selectedType == t);
             boolean isHov = MathUtil.isHovered(mx, my, tabX, tabY, tabW, tabH);
 
-            int tabBg = isSel ? ColorUtil.replAlpha(accent, 0.28F) : (isHov ? ColorUtil.getColor(20, 28, 42) : ColorUtil.getColor(14, 18, 28));
-            int tabBorder = isSel ? accent : (isHov ? ColorUtil.getColor(54, 72, 104) : ColorUtil.getColor(28, 38, 54));
+            int tBg = isSel ? ColorUtil.replAlpha(accent, 0.28F) : (isHov ? ColorUtil.getColor(20, 28, 42) : ColorUtil.getColor(14, 18, 28));
+            int tBorder = isSel ? accent : (isHov ? ColorUtil.getColor(54, 72, 104) : ColorUtil.getColor(28, 38, 54));
 
-            Draw.rect(tabX, tabY, tabW, tabH, tabBg, 3.0F);
-            Draw.outline(tabX, tabY, tabW, tabH, 1.0F, tabBorder, 3.0F);
-            Fonts.sf_bold.drawCentered(t.getDisplayName(), tabX + tabW / 2.0F, tabY + 4.0F, 6.8F,
+            Draw.rect(tabX, tabY, tabW, tabH, tBg, 3.0F);
+            Draw.outline(tabX, tabY, tabW, tabH, 1.0F, tBorder, 3.0F);
+            Fonts.sf_bold.drawCentered(t.getDisplayName(), tabX + tabW / 2.0F, tabY + 3.5F, 6.5F,
                     isSel ? ColorUtil.getColor(255) : (isHov ? ColorUtil.getColor(215, 225, 240) : ColorUtil.getColor(145, 155, 175)));
         }
 
-        // 9. Поля ввода Host и Port
+        // 10. Поля ввода Host и Port
         float hostH = 18.0F;
-        float hostY = winY + 86.0F;
+        float hostY = winY + 95.0F;
         float portW = 58.0F;
         float hostW = winW - 28.0F - portW - 8.0F;
         float hostX = winX + 14.0F;
@@ -222,8 +313,8 @@ public class ProxyScreen extends Screen {
         drawInputField(hostX, hostY, hostW, hostH, I18n.hostLabel(currentLang), hostText, "127.0.0.1", false, focusedField == Field.HOST, mx, my);
         drawInputField(portX, hostY, portW, hostH, I18n.portLabel(currentLang), portText, "1080", false, focusedField == Field.PORT, mx, my);
 
-        // 10. Поля ввода Login и Password
-        float credsY = winY + 117.0F;
+        // 11. Поля ввода Login и Password
+        float credsY = winY + 125.0F;
         float credsW = (winW - 28.0F - 8.0F) / 2.0F;
         float userX = winX + 14.0F;
         float passX = userX + credsW + 8.0F;
@@ -231,8 +322,8 @@ public class ProxyScreen extends Screen {
         drawInputField(userX, credsY, credsW, hostH, I18n.userLabel(currentLang), userText, I18n.userPlaceholder(currentLang), false, focusedField == Field.USER, mx, my);
         drawInputField(passX, credsY, credsW, hostH, I18n.passLabel(currentLang), passText, I18n.passPlaceholder(currentLang), true, focusedField == Field.PASS, mx, my);
 
-        // 11. Статус проверки подключения
-        float statusY = winY + 141.0F;
+        // 12. Статус проверки подключения и текущий пинг
+        float statusY = winY + 151.0F;
         if (isTesting) {
             Fonts.sf_medium.draw(I18n.testing(currentLang), winX + 14.0F, statusY, 6.5F, ColorUtil.getColor(245, 195, 60));
         } else if (lastTestResult != null) {
@@ -243,11 +334,19 @@ public class ProxyScreen extends Screen {
                     ? I18n.success(currentLang, lastTestResult.pingMs())
                     : I18n.failed(currentLang, lastTestResult.error());
             Fonts.sf_medium.draw(statusStr, winX + 22.0F, statusY, 6.5F, statCol);
+        } else {
+            ProxyConfig.ProxyProfile p = config.getActiveProfile();
+            if (p != null && p.getLastPingMs() > 0) {
+                int pingCol = p.getLastPingMs() < 100 ? ColorUtil.getColor(50, 225, 110)
+                        : (p.getLastPingMs() < 250 ? ColorUtil.getColor(245, 200, 60) : ColorUtil.getColor(245, 80, 80));
+                Draw.rect(winX + 14.0F, statusY + 2.0F, 4.0F, 4.0F, pingCol, 2.0F);
+                Fonts.sf_medium.draw("Latency: " + p.getLastPingMs() + " ms", winX + 22.0F, statusY, 6.2F, pingCol);
+            }
         }
 
-        // 12. Кнопки в подвале (без пустого зазора)
+        // 13. Кнопки в подвале
         float btnH = 20.0F;
-        float btnY = winY + 158.0F;
+        float btnY = winY + 172.0F;
 
         // [ Проверить / Check ]
         float testBtnW = 76.0F;
@@ -307,6 +406,51 @@ public class ProxyScreen extends Screen {
         }
     }
 
+    private void syncCurrentToProfile() {
+        ProxyConfig.ProxyProfile p = config.getActiveProfile();
+        if (p != null) {
+            p.setType(selectedType);
+            String h = hostText.trim();
+            p.setHost(h);
+            try {
+                p.setPort(MathHelper.clamp(Integer.parseInt(portText.trim()), 1, 65535));
+            } catch (Exception ignored) {}
+            p.setUsername(userText.trim());
+            p.setPassword(passText);
+        }
+    }
+
+    private void loadProfile(int index) {
+        syncCurrentToProfile();
+        config.setSelectedProfileIndex(index);
+        ProxyConfig.ProxyProfile p = config.getActiveProfile();
+        if (p != null) {
+            this.selectedType = p.getType();
+            this.hostText = p.getHost() != null ? p.getHost() : "127.0.0.1";
+            this.portText = String.valueOf(p.getPort() > 0 ? p.getPort() : 1080);
+            this.userText = p.getUsername() != null ? p.getUsername() : "";
+            this.passText = p.getPassword() != null ? p.getPassword() : "";
+            this.lastTestResult = null;
+        }
+    }
+
+    private void importFromClipboard(long win) {
+        String clip = GLFW.glfwGetClipboardString(win);
+        if (clip != null && !clip.trim().isEmpty()) {
+            ProxyConfig.ProxyProfile parsed = ProxyConfig.ProxyProfile.parse(clip);
+            if (parsed != null) {
+                this.selectedType = parsed.getType();
+                this.hostText = parsed.getHost();
+                this.portText = String.valueOf(parsed.getPort());
+                this.userText = parsed.getUsername();
+                this.passText = parsed.getPassword();
+                syncCurrentToProfile();
+                config.save();
+                GuiSounds.button();
+            }
+        }
+    }
+
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -358,22 +502,106 @@ public class ProxyScreen extends Screen {
                 return true;
             }
 
-            // Переключатель активности
-            float switchW = 25.0F;
-            float switchH = 13.0F;
-            float switchY = winY + 31.0F;
-            if (MathUtil.isHovered(mx, my, winX + 14.0F, switchY - 3.0F, winW - 28.0F, switchH + 6.0F)) {
+            // 7. Панель профилей кнопки
+            float profY = winY + 30.0F;
+            float prevX = winX + 14.0F;
+            float arrowBtnW = 15.0F;
+            float arrowBtnH = 14.0F;
+
+            // Кнопка Предыдущий <
+            if (MathUtil.isHovered(mx, my, prevX, profY, arrowBtnW, arrowBtnH)) {
+                int total = config.getProfiles().size();
+                int prevIdx = (config.getSelectedProfileIndex() - 1 + total) % total;
+                loadProfile(prevIdx);
+                GuiSounds.picker(true);
+                return true;
+            }
+
+            // Кнопка Следующий >
+            float pLabelX = prevX + arrowBtnW + 3.0F;
+            float pLabelW = 86.0F;
+            float nextX = pLabelX + pLabelW + 3.0F;
+            if (MathUtil.isHovered(mx, my, nextX, profY, arrowBtnW, arrowBtnH)) {
+                int total = config.getProfiles().size();
+                int nextIdx = (config.getSelectedProfileIndex() + 1) % total;
+                loadProfile(nextIdx);
+                GuiSounds.picker(true);
+                return true;
+            }
+
+            // Кнопка Добавить [ + ]
+            float addX = nextX + arrowBtnW + 6.0F;
+            float addW = 38.0F;
+            if (MathUtil.isHovered(mx, my, addX, profY, addW, arrowBtnH)) {
+                syncCurrentToProfile();
+                int newNum = config.getProfiles().size() + 1;
+                ProxyConfig.ProxyProfile np = new ProxyConfig.ProxyProfile("Profile " + newNum, ProxyConfig.Type.SOCKS5, "127.0.0.1", 1080, "", "");
+                config.getProfiles().add(np);
+                loadProfile(config.getProfiles().size() - 1);
+                config.save();
+                GuiSounds.button();
+                return true;
+            }
+
+            // Кнопка Удалить [ Del ]
+            float delX = addX + addW + 4.0F;
+            float delW = 36.0F;
+            if (config.getProfiles().size() > 1 && MathUtil.isHovered(mx, my, delX, profY, delW, arrowBtnH)) {
+                int idx = config.getSelectedProfileIndex();
+                config.getProfiles().remove(idx);
+                int nextIdx = Math.max(0, idx - 1);
+                config.setSelectedProfileIndex(nextIdx);
+                loadProfile(nextIdx);
+                config.save();
+                GuiSounds.button();
+                return true;
+            }
+
+            // Кнопка Импорт [ Import ]
+            float impX = delX + delW + 4.0F;
+            float impW = winX + winW - 14.0F - impX;
+            if (MathUtil.isHovered(mx, my, impX, profY, impW, arrowBtnH)) {
+                long win = mc.getWindow().getHandle();
+                importFromClipboard(win);
+                return true;
+            }
+
+            // 8. Переключатели: [Включить] + [HUD] + [Failover]
+            float optsY = winY + 49.0F;
+            float switchW = 20.0F;
+            float switchH = 11.0F;
+            float switchX = winX + 14.0F;
+            if (MathUtil.isHovered(mx, my, switchX - 2.0F, optsY - 2.0F, switchW + 110.0F, switchH + 4.0F)) {
                 enabled = !enabled;
                 GuiSounds.toggle(enabled);
                 return true;
             }
 
-            // Табы протокола
+            // HUD Toggle Badge
+            float hudBadgeX = winX + 160.0F;
+            float hudBadgeW = 74.0F;
+            float badgeH = 13.0F;
+            if (MathUtil.isHovered(mx, my, hudBadgeX, optsY, hudBadgeW, badgeH)) {
+                hudEnabled = !hudEnabled;
+                GuiSounds.toggle(hudEnabled);
+                return true;
+            }
+
+            // Failover Toggle Badge
+            float failBadgeX = hudBadgeX + hudBadgeW + 5.0F;
+            float failBadgeW = winX + winW - 14.0F - failBadgeX;
+            if (MathUtil.isHovered(mx, my, failBadgeX, optsY, failBadgeW, badgeH)) {
+                autoFailover = !autoFailover;
+                GuiSounds.toggle(autoFailover);
+                return true;
+            }
+
+            // 9. Табы протокола
             ProxyConfig.Type[] types = ProxyConfig.Type.values();
             float tabGap = 6.0F;
             float tabW = (winW - 28.0F - (types.length - 1) * tabGap) / types.length;
-            float tabH = 16.0F;
-            float tabY = winY + 57.0F;
+            float tabH = 15.0F;
+            float tabY = winY + 68.0F;
 
             for (int i = 0; i < types.length; i++) {
                 float tabX = winX + 14.0F + i * (tabW + tabGap);
@@ -384,15 +612,15 @@ public class ProxyScreen extends Screen {
                 }
             }
 
-            // Поля ввода
+            // 10. Поля ввода
             float hostH = 18.0F;
-            float hostY = winY + 86.0F;
+            float hostY = winY + 95.0F;
             float portW = 58.0F;
             float hostW = winW - 28.0F - portW - 8.0F;
             float hostX = winX + 14.0F;
             float portX = hostX + hostW + 8.0F;
 
-            float credsY = winY + 117.0F;
+            float credsY = winY + 125.0F;
             float credsW = (winW - 28.0F - 8.0F) / 2.0F;
             float userX = winX + 14.0F;
             float passX = userX + credsW + 8.0F;
@@ -413,9 +641,9 @@ public class ProxyScreen extends Screen {
                 focusedField = Field.NONE;
             }
 
-            // Кнопки подвала
+            // 13. Кнопки подвала
             float btnH = 20.0F;
-            float btnY = winY + 158.0F;
+            float btnY = winY + 172.0F;
 
             // [ Проверить / Check ]
             float testBtnW = 76.0F;
@@ -592,11 +820,20 @@ public class ProxyScreen extends Screen {
         ProxyManager.testConnection(testCfg, res -> {
             isTesting = false;
             lastTestResult = res;
+            if (res.success()) {
+                ProxyConfig.ProxyProfile p = config.getActiveProfile();
+                if (p != null) {
+                    p.setLastPingMs(res.pingMs());
+                }
+            }
         });
     }
 
     private void saveConfig() {
+        syncCurrentToProfile();
         config.setEnabled(enabled);
+        config.setHudEnabled(hudEnabled);
+        config.setAutoFailover(autoFailover);
         config.setType(selectedType);
         config.setLanguage(currentLang);
 
