@@ -36,12 +36,15 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
 
     @Override
     public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) throws Exception {
-        if (remoteAddress instanceof InetSocketAddress isa) {
-            this.target = isa;
-        } else {
-            this.target = new InetSocketAddress(remoteAddress.toString(), 0);
+        if (!(remoteAddress instanceof InetSocketAddress isa) || ctx.channel() instanceof io.netty.channel.local.LocalChannel) {
+            try {
+                ctx.pipeline().remove(this);
+            } catch (Exception ignored) {}
+            ctx.connect(remoteAddress, localAddress, promise);
+            return;
         }
 
+        this.target = isa;
         SocketAddress proxyAddress = ProxyManager.getProxySocketAddress();
         ctx.connect(proxyAddress, localAddress, promise);
     }
@@ -313,6 +316,7 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
             cumulation.release();
             cumulation = null;
         }
+        ProxyManager.tryFailover();
         ctx.fireExceptionCaught(new IOException(error));
         ctx.close();
     }
@@ -320,6 +324,7 @@ public class SocksProxyHandler extends ChannelDuplexHandler {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         releaseCumulation();
+        ProxyManager.tryFailover();
         ctx.fireExceptionCaught(cause);
     }
 

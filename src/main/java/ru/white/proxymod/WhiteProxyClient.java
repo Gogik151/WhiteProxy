@@ -39,7 +39,7 @@ public class WhiteProxyClient implements ClientModInitializer {
 
         HudRenderCallback.EVENT.register((drawContext, renderTickCounter) -> {
             MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc.options.hudHidden) return;
+            if (mc.options.hudHidden || mc.isInSingleplayer()) return;
 
             ProxyConfig cfg = ProxyManager.getConfig();
             if (!cfg.isEnabled() || !cfg.isHudEnabled()) return;

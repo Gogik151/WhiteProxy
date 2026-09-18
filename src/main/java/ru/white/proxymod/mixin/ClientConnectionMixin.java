@@ -1,6 +1,7 @@
 package ru.white.proxymod.mixin;
 
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.local.LocalChannel;
 import net.minecraft.network.ClientConnection;
 import net.minecraft.network.NetworkSide;
 import net.minecraft.network.handler.PacketSizeLogger;
@@ -17,6 +18,10 @@ public class ClientConnectionMixin {
     @Inject(method = "addHandlers", at = @At("HEAD"))
     private static void onAddHandlers(ChannelPipeline pipeline, NetworkSide side, boolean bl, PacketSizeLogger packetSizeLogger, CallbackInfo ci) {
         if (side == NetworkSide.CLIENTBOUND && ProxyManager.isProxyActive()) {
+            // Never proxy local integrated server / singleplayer in-memory channels
+            if (pipeline.channel() == null || pipeline.channel() instanceof LocalChannel) {
+                return;
+            }
             pipeline.addFirst("proxy_handler", new SocksProxyHandler(ProxyManager.getConfig()));
         }
     }
